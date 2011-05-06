@@ -32,6 +32,8 @@
 (define secret-key (make-parameter ""))
 (define https (make-parameter #f))
 
+;;; helper methods
+
 (define (make-aws-authorization verb resource #!key (date #f) (amz-headers '()) (content-md5 #f) (content-type #f))
   (let* ((can-amz-headers (sort (map (lambda (header)
                                        `(,(string-downcase (car header)) . ,(cdr header)))
@@ -59,24 +61,39 @@
 
 (define *last-sig* #f)
 
-(define (list-objects bucket)
+(define (aws-headers bucket path)
+  (let ((n (current-date 0)))
+    (headers `((date #(,(intarweb-date n) ()))
+               (authorization #(aws ((access-key . ,(access-key))
+                                     (signed-secret .
+                                                    ,(make-aws-authorization
+                                                      "GET" (string-append "/" bucket "/")
+                                                      date: (sig-date n)
+                                                      content-type: "application/x-www-form-urlencoded")))))))))
+
+(define (aws-request bucket path)
+  (make-request
+   method: 'GET
+   uri: (uri-reference (string-append "http" (if (https) "s" "") "://" bucket ".s3.amazonaws.com"))
+   headers: (aws-headers bucket "")))
+
+(define (aws-xml-parser path)
+  (lambda () 
+     ((sxpath path)
+      (ssax:xml->sxml (current-input-port) '((x . "http://s3.amazonaws.com/doc/2006-03-01/"))))))
+
+(define (perform-aws-request bucket path sxpath-path)
   ;(handle-exceptions
   ; exn
   ; ((condition-property-accessor 'client-error 'body) exn)
   (with-input-from-request
-   (make-request
-    method: 'GET
-    uri: (uri-reference (string-append "http" (if (https) "s" "") "://" bucket ".s3.amazonaws.com"))
-    headers: (let ((n (current-date 0)))
-               (headers `((date #(,(intarweb-date n) ()))
-                          (authorization #(aws ((access-key . ,(access-key))
-                                                (signed-secret .
-                                                         ,(make-aws-authorization
-                                                          "GET" (string-append "/" bucket "/")
-                                                          date: (sig-date n)
-                                                          content-type: "application/x-www-form-urlencoded")))))))))
+   (aws-request bucket path)
    '()
-   (lambda () 
-     ((sxpath '(x:ListBucketResult x:Contents x:Key *text*))
-      (ssax:xml->sxml (current-input-port) '((x . "http://s3.amazonaws.com/doc/2006-03-01/")))))))
+   (aws-xml-parser sxpath-path)))
+
+;;; api
+
+(define (list-objects bucket)
+  (perform-aws-request bucket "" '(x:ListBucketResult x:Contents x:Key *text*)))
+
 )
