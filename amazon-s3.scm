@@ -15,13 +15,20 @@
    ;get-object put-object delete-object)
 
 (import scheme chicken srfi-1 extras srfi-13 data-structures ports posix)
-(use base64 sha1 http-client uri-common intarweb srfi-19 hmac ssax)
+(use base64 sha1 http-client uri-common intarweb srfi-19 hmac ssax sxpath)
+
+;(header-unparsers
+; (alist-update! 'authorization
+;                (lambda (v) (list (vector-ref (first v) 0)))
+;                (header-unparsers)))
 
 ; needed to make intarweb work with Amazon's screwy authorization header
-(header-unparsers
- (alist-update! 'authorization
-                (lambda (v) (list (vector-ref (first v) 0)))
-                (header-unparsers)))
+(define (aws-param-subunparser params)
+ (sprintf "~A:~A" (alist-ref 'access-key params)
+                  (alist-ref 'signed-secret params)))
+
+(authorization-param-subunparsers
+ `((aws . ,aws-param-subunparser) . ,(authorization-param-subunparsers)))
 
 (define (intarweb-date date) (string->time (date->string date "~a ~b ~d ~T ~Y GMT")))
 (define (sig-date date) (date->string date "~a, ~d ~b ~Y ~T GMT"))
@@ -58,22 +65,27 @@
 (define *last-sig* #f)
 
 (define (list-objects bucket)
-;  (handle-exceptions
-;   exn
-;   ((condition-property-accessor 'client-error 'body) exn)
+  ;(handle-exceptions
+  ; exn
+  ; ((condition-property-accessor 'client-error 'body) exn)
   (with-input-from-request
    (make-request
     method: 'GET
     uri: (uri-reference (string-append "http" (if (https) "s" "") "://" bucket ".s3.amazonaws.com"))
     headers: (let ((n (current-date 0)))
                (headers `((date #(,(intarweb-date n) ()))
-                          (authorization ,(string-append "AWS " (access-key) ":"
-                                                         (make-aws-authorization
+;                          (authorization ,(string-append "AWS " (access-key) ":"
+                          (authorization #(aws ((access-key . ,(access-key))
+                                                (signed-secret .
+                                                         ,(make-aws-authorization
                                                           "GET" (string-append "/" bucket "/")
                                                           date: (sig-date n)
-                                                          content-type: "application/x-www-form-urlencoded")))))))
-    '()
-    (lambda () (ssax:xml->sxml (current-input-port) '()))))
+                                                          content-type: "application/x-www-form-urlencoded")))))))))
+   '()
+   (lambda () 
+     ((sxpath '(x:ListBucketResult x:Contents x:Key *text*))
+      (ssax:xml->sxml (current-input-port) '((x . "http://s3.amazonaws.com/doc/2006-03-01/")))))))
+    ;read-string)))
    
 
 
@@ -95,7 +107,7 @@
 ;    (make-request method: 'GET
 ;                  uri: (uri-reference "http://s3.amazonaws.com/test-bucket-keep-the-records")
 ;                  headers: (headers `((date #(,(string->time (date->string *date-as-date* "~a ~b ~d ~T ~Y GMT")) ()))
-;                                      (authorization ,(string-append "" (sig))))))
+;                                      (authorization ,(string-append ":" (sig))))))
 ;    '()
 ;    read-string)))
 )
