@@ -8,10 +8,9 @@
 
               *last-sig*
 
-   list-objects)
+   list-objects list-buckets bucket-exists? create-bucket! delete-bucket!)
               
    ;; procs
-   ;bucket-exists? create-bucket delete-bucket list-buckets list-objects
    ;get-object put-object delete-object)
 
 (import scheme chicken srfi-1 extras srfi-13 data-structures ports posix)
@@ -25,11 +24,13 @@
 (authorization-param-subunparsers
  `((aws . ,aws-param-subunparser) . ,(authorization-param-subunparsers)))
 
+;;; params
+
 (define (intarweb-date date) (string->time (date->string date "~a ~b ~d ~T ~Y GMT")))
 (define (sig-date date) (date->string date "~a, ~d ~b ~Y ~T GMT"))
 
-(define access-key (make-parameter ""))
-(define secret-key (make-parameter ""))
+(define access-key (make-parameter "AKIAJ4BAYHGF254QF7DQ"))
+(define secret-key (make-parameter "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"))
 (define https (make-parameter #f))
 
 ;;; helper methods
@@ -60,40 +61,69 @@
     (values hmac-sha1 can-string)))
 
 (define *last-sig* #f)
+(define amazon-ns (make-parameter '(x . "http://s3.amazonaws.com/doc/2006-03-01/")))
 
-(define (aws-headers bucket path)
+(define (aws-headers bucket path verb)
   (let ((n (current-date 0)))
     (headers `((date #(,(intarweb-date n) ()))
                (authorization #(aws ((access-key . ,(access-key))
                                      (signed-secret .
                                                     ,(make-aws-authorization
-                                                      "GET" (string-append "/" bucket "/")
+                                                      verb (string-append "/" (if bucket (string-append bucket "/") ""))
                                                       date: (sig-date n)
                                                       content-type: "application/x-www-form-urlencoded")))))))))
 
-(define (aws-request bucket path)
+(define (aws-request bucket path verb)
   (make-request
-   method: 'GET
-   uri: (uri-reference (string-append "http" (if (https) "s" "") "://" bucket ".s3.amazonaws.com"))
-   headers: (aws-headers bucket "")))
+   method: (string->symbol verb)
+   uri: (uri-reference (string-append "http" (if (https) "s" "") "://" (if bucket (string-append bucket ".") "")
+                                      "s3.amazonaws.com"))
+   headers: (aws-headers bucket "" verb)))
 
-(define (aws-xml-parser path)
+(define (aws-xml-parser path ns)
   (lambda () 
      ((sxpath path)
-      (ssax:xml->sxml (current-input-port) '((x . "http://s3.amazonaws.com/doc/2006-03-01/"))))))
+      (ssax:xml->sxml (current-input-port) ns))))
 
-(define (perform-aws-request bucket path sxpath-path)
+(define (perform-aws-request bucket path sxpath-path verb #!key
+                             (ns '((x . "http://s3.amazonaws.com/doc/2006-03-01/")))
+                             (no-xml #f))
   ;(handle-exceptions
   ; exn
   ; ((condition-property-accessor 'client-error 'body) exn)
   (with-input-from-request
-   (aws-request bucket path)
+   (aws-request bucket path verb)
    '()
-   (aws-xml-parser sxpath-path)))
+   (if no-xml
+       read-string
+       (aws-xml-parser sxpath-path ns))))
 
 ;;; api
 
 (define (list-objects bucket)
-  (perform-aws-request bucket "" '(x:ListBucketResult x:Contents x:Key *text*)))
+  (perform-aws-request bucket "" '(x:ListBucketResult x:Contents x:Key *text*) "GET"))
+
+(define (list-buckets)
+  (perform-aws-request #f "" '(x:ListAllMyBucketsResult x:Buckets x:Bucket x:Name *text*) "GET"))
+
+; probably should use something faster than list-objects for the test...
+(define (bucket-exists? bucket)
+  (handle-exceptions
+   exn
+   (if (string=? (call-with-input-string ((condition-property-accessor 'client-error 'body) exn)
+                               (lambda (p)
+                                 (first ((sxpath '(Error Code *text*)) (ssax:xml->sxml p '())))))
+                 "NoSuchBucket")
+       #f
+       (abort exn))
+   (list-objects bucket)
+   #t))
+
+(define (create-bucket! bucket)
+  (perform-aws-request bucket "" '() "PUT" no-xml: #t))
+
+
+(define (delete-bucket! bucket)
+  (perform-aws-request bucket "" '() "DELETE" no-xml: #t))
 
 )
