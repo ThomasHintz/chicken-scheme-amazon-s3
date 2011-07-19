@@ -8,10 +8,10 @@
 
               *last-sig*
 
-   list-objects list-buckets bucket-exists? create-bucket! delete-bucket!)
+   list-objects list-buckets bucket-exists? create-bucket! delete-bucket! get-object)
               
    ;; procs
-   ;get-object put-object delete-object)
+   ;put-object delete-object)
 
 (import scheme chicken srfi-1 extras srfi-13 data-structures ports posix)
 (use base64 sha1 http-client uri-common intarweb srfi-19 hmac ssax sxpath)
@@ -34,6 +34,12 @@
 (define https (make-parameter #f))
 
 ;;; helper methods
+
+(define (assert-404 exn)
+  (if (string=? ((condition-property-accessor 'exn 'message) exn)
+                 "Client error: 404 Not Found")
+       #f
+       (abort exn)))
 
 (define (make-aws-authorization verb resource #!key (date #f) (amz-headers '()) (content-md5 #f) (content-type #f))
   (let* ((can-amz-headers (sort (map (lambda (header)
@@ -69,61 +75,70 @@
                (authorization #(aws ((access-key . ,(access-key))
                                      (signed-secret .
                                                     ,(make-aws-authorization
-                                                      verb (string-append "/" (if bucket (string-append bucket "/") ""))
+                                                      verb
+                                                      (string-append "/"
+                                                                     (if bucket (string-append bucket "/") "")
+                                                                     (if path path ""))
                                                       date: (sig-date n)
                                                       content-type: "application/x-www-form-urlencoded")))))))))
 
-(define (aws-request bucket path verb)
+(define (aws-request bucket path verb #!key no-auth)
   (make-request
    method: (string->symbol verb)
    uri: (uri-reference (string-append "http" (if (https) "s" "") "://" (if bucket (string-append bucket ".") "")
-                                      "s3.amazonaws.com"))
-   headers: (aws-headers bucket "" verb)))
+                                      "s3.amazonaws.com" (if path (string-append "/" path) "")))
+   headers: (if no-auth (headers '()) (aws-headers bucket path verb))))
 
 (define (aws-xml-parser path ns)
   (lambda () 
      ((sxpath path)
       (ssax:xml->sxml (current-input-port) ns))))
 
-(define (perform-aws-request bucket path sxpath-path verb #!key
+(define (perform-aws-request bucket path #!key
+                             (content #f)
+                             (sxpath '())
+                             (verb (if content "PUT" "GET"))
                              (ns '((x . "http://s3.amazonaws.com/doc/2006-03-01/")))
-                             (no-xml #f))
+                             (no-xml #f)
+                             (params '())
+                             (no-auth #f))
   ;(handle-exceptions
   ; exn
   ; ((condition-property-accessor 'client-error 'body) exn)
   (with-input-from-request
-   (aws-request bucket path verb)
-   '()
+   (aws-request bucket path verb no-auth: no-auth)
+   params
    (if no-xml
        read-string
-       (aws-xml-parser sxpath-path ns))))
+       (aws-xml-parser sxpath ns))))
 
 ;;; api
 
 (define (list-objects bucket)
-  (perform-aws-request bucket "" '(x:ListBucketResult x:Contents x:Key *text*) "GET"))
+  (perform-aws-request bucket #f sxpath: '(x:ListBucketResult x:Contents x:Key *text*)))
 
 (define (list-buckets)
-  (perform-aws-request #f "" '(x:ListAllMyBucketsResult x:Buckets x:Bucket x:Name *text*) "GET"))
+  (perform-aws-request #f #f sxpath: '(x:ListAllMyBucketsResult x:Buckets x:Bucket x:Name *text*)))
 
-; probably should use something faster than list-objects for the test...
 (define (bucket-exists? bucket)
   (handle-exceptions
    exn
-   (if (string=? (call-with-input-string ((condition-property-accessor 'client-error 'body) exn)
-                               (lambda (p)
-                                 (first ((sxpath '(Error Code *text*)) (ssax:xml->sxml p '())))))
-                 "NoSuchBucket")
-       #f
-       (abort exn))
-   (list-objects bucket)
+   (assert-404 exn)
+   (perform-aws-request #f bucket verb: "HEAD" no-xml: #t params: '((max-keys . "0")))
    #t))
 
 (define (create-bucket! bucket)
-  (perform-aws-request bucket "" '() "PUT" no-xml: #t))
-
+  (perform-aws-request bucket #f verb: "PUT" no-xml: #t))
 
 (define (delete-bucket! bucket)
-  (perform-aws-request bucket "" '() "DELETE" no-xml: #t))
+  (perform-aws-request bucket #f verb: "DELETE" no-xml: #t))
+
+(define (set-object! bucket key object) #f)
+  ;(perform-aws-request bucket key '() 
+
+(define (get-object bucket key)
+  (perform-aws-request bucket key no-xml: #t))
+
+(define (delete-object bucket key) #f)
 
 )
