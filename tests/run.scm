@@ -14,7 +14,10 @@
             (test-assert "Create Bucket" (create-bucket! *b*))
             (test "Bucket Exists 2" #t (bucket-exists? *b*))
             (test-assert "List Buckets" (list-buckets)) ; should test this more specifically...
-            (test "List Bucket Objects" '() (list-objects *b*))
+            (test "List Bucket Objects 1" '() (list-objects *b*))
+            (test-assert "Put Object" (put-object! *b* "key" "value"))
+            (test "List Bucket Objects 2" '("key") (list-objects *b*))
+            (test-assert "Delete Object" (delete-object! *b* "key"))
             (test-assert "Delete Bucket" (delete-bucket! *b*)))
 
 (test-exit)

@@ -8,10 +8,8 @@
 
               *last-sig*
 
-   list-objects list-buckets bucket-exists? create-bucket! delete-bucket! get-object)
-              
    ;; procs
-   ;put-object delete-object)
+   list-objects list-buckets bucket-exists? create-bucket! delete-bucket! get-object put-object! delete-object!)
 
 (import scheme chicken srfi-1 extras srfi-13 data-structures ports posix)
 (use base64 sha1 http-client uri-common intarweb srfi-19 hmac ssax sxpath)
@@ -69,7 +67,7 @@
 (define *last-sig* #f)
 (define amazon-ns (make-parameter '(x . "http://s3.amazonaws.com/doc/2006-03-01/")))
 
-(define (aws-headers bucket path verb)
+(define (aws-headers bucket path verb content-type content-length)
   (let ((n (current-date 0)))
     (headers `((date #(,(intarweb-date n) ()))
                (authorization #(aws ((access-key . ,(access-key))
@@ -80,14 +78,16 @@
                                                                      (if bucket (string-append bucket "/") "")
                                                                      (if path path ""))
                                                       date: (sig-date n)
-                                                      content-type: "application/x-www-form-urlencoded")))))))))
+                                                      content-type: content-type)))))
+               (content-type ,(string->symbol content-type))
+               (content-length ,content-length)))))
 
-(define (aws-request bucket path verb #!key no-auth)
+(define (aws-request bucket path verb #!key no-auth (content-type "") (content-length 0))
   (make-request
    method: (string->symbol verb)
    uri: (uri-reference (string-append "http" (if (https) "s" "") "://" (if bucket (string-append bucket ".") "")
                                       "s3.amazonaws.com" (if path (string-append "/" path) "")))
-   headers: (if no-auth (headers '()) (aws-headers bucket path verb))))
+   headers: (if no-auth (headers '()) (aws-headers bucket path verb content-type content-length))))
 
 (define (aws-xml-parser path ns)
   (lambda () 
@@ -95,19 +95,20 @@
       (ssax:xml->sxml (current-input-port) ns))))
 
 (define (perform-aws-request bucket path #!key
-                             (content #f)
                              (sxpath '())
-                             (verb (if content "PUT" "GET"))
+                             (body '())
+                             (verb "GET")
                              (ns '((x . "http://s3.amazonaws.com/doc/2006-03-01/")))
                              (no-xml #f)
-                             (params '())
-                             (no-auth #f))
+                             (no-auth #f)
+                             (content-type "application/x-www-form-urlencoded")
+                             (content-length 0))
   ;(handle-exceptions
   ; exn
   ; ((condition-property-accessor 'client-error 'body) exn)
   (with-input-from-request
-   (aws-request bucket path verb no-auth: no-auth)
-   params
+   (aws-request bucket path verb no-auth: no-auth content-type: content-type content-length: content-length)
+   body
    (if no-xml
        read-string
        (aws-xml-parser sxpath ns))))
@@ -124,7 +125,7 @@
   (handle-exceptions
    exn
    (assert-404 exn)
-   (perform-aws-request #f bucket verb: "HEAD" no-xml: #t params: '((max-keys . "0")))
+   (perform-aws-request #f bucket verb: "HEAD" no-xml: #t)
    #t))
 
 (define (create-bucket! bucket)
@@ -133,12 +134,14 @@
 (define (delete-bucket! bucket)
   (perform-aws-request bucket #f verb: "DELETE" no-xml: #t))
 
-(define (set-object! bucket key object) #f)
-  ;(perform-aws-request bucket key '() 
+(define (put-object! bucket key object)
+  (perform-aws-request bucket key verb: "PUT" content-type: "text/plain" body: (lambda () (print object))
+                       content-length: (string-length object) no-xml: #t))
 
 (define (get-object bucket key)
   (perform-aws-request bucket key no-xml: #t))
 
-(define (delete-object bucket key) #f)
+(define (delete-object! bucket key)
+  (perform-aws-request bucket key no-xml: #t verb: "DELETE"))
 
 )
