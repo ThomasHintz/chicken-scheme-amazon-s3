@@ -3,13 +3,18 @@
 ; license: bsd
 
 (module amazon-s3
-  (;; params
+  (;; debugging
+   *last-sig*
+
+   ;; params
    access-key secret-key https
 
-              *last-sig*
-
    ;; procs
-   list-objects list-buckets bucket-exists? create-bucket! delete-bucket! get-object put-object! delete-object!)
+   list-objects list-buckets bucket-exists? create-bucket! delete-bucket! get-object put-object! delete-object!
+   put-string! put-sexp! get-string get-sexp
+
+   ;; macros
+   with-bucket)
 
 (import scheme chicken srfi-1 extras srfi-13 data-structures ports posix)
 (use base64 sha1 http-client uri-common intarweb srfi-19 hmac ssax sxpath)
@@ -94,7 +99,9 @@
      ((sxpath path)
       (ssax:xml->sxml (current-input-port) ns))))
 
-(define (perform-aws-request bucket path #!key
+(define (perform-aws-request #!key
+                             (bucket #f)
+                             (path #f)
                              (sxpath '())
                              (body '())
                              (verb "GET")
@@ -115,33 +122,55 @@
 
 ;;; api
 
-(define (list-objects bucket)
-  (perform-aws-request bucket #f sxpath: '(x:ListBucketResult x:Contents x:Key *text*)))
+(define-syntax with-bucket
+  (syntax-rules ()
+    ((with-bucket bucket (func p1 ...))
+     (func bucket p1 ...))
+    ((with-bucket bucket exp body ...)
+     (begin (with-bucket bucket exp)
+            (with-bucket bucket body ...)))))
 
 (define (list-buckets)
-  (perform-aws-request #f #f sxpath: '(x:ListAllMyBucketsResult x:Buckets x:Bucket x:Name *text*)))
+  (perform-aws-request sxpath: '(x:ListAllMyBucketsResult x:Buckets x:Bucket x:Name *text*)))
 
 (define (bucket-exists? bucket)
   (handle-exceptions
    exn
    (assert-404 exn)
-   (perform-aws-request #f bucket verb: "HEAD" no-xml: #t)
+   (perform-aws-request bucket: bucket verb: "HEAD" no-xml: #t)
    #t))
 
 (define (create-bucket! bucket)
-  (perform-aws-request bucket #f verb: "PUT" no-xml: #t))
+  (perform-aws-request bucket: bucket verb: "PUT" no-xml: #t))
 
 (define (delete-bucket! bucket)
-  (perform-aws-request bucket #f verb: "DELETE" no-xml: #t))
+  (perform-aws-request bucket: bucket verb: "DELETE" no-xml: #t))
 
-(define (put-object! bucket key object)
-  (perform-aws-request bucket key verb: "PUT" content-type: "text/plain" body: (lambda () (print object))
-                       content-length: (string-length object) no-xml: #t))
+(define (list-objects bucket)
+  (perform-aws-request bucket: bucket sxpath: '(x:ListBucketResult x:Contents x:Key *text*)))
+
+(define (put-object! bucket key object-thunk object-length object-type)
+  (perform-aws-request bucket: bucket path: key verb: "PUT" content-type: object-type body: (object-thunk)
+                       content-length: object-length no-xml: #t))
+
+(define (put-string! bucket key string)
+  (put-object! bucket key (lambda () string) (string-length string) "text/plain"))
+
+(define (put-sexp! bucket key sexp)
+  (let-values (((res request-uri response) (put-string! bucket key (->string sexp))))
+    (values res request-uri response)))
 
 (define (get-object bucket key)
-  (perform-aws-request bucket key no-xml: #t))
+  (perform-aws-request bucket: bucket path: key no-xml: #t))
+
+(define (get-string bucket key)
+  (perform-aws-request bucket: bucket path: key no-xml: #t))
+
+(define (get-sexp bucket key)
+  (let-values (((string request-uri response) (get-string bucket key)))
+               (values (call-with-input-string string read) request-uri response)))
 
 (define (delete-object! bucket key)
-  (perform-aws-request bucket key no-xml: #t verb: "DELETE"))
+  (perform-aws-request bucket: bucket path: key no-xml: #t verb: "DELETE"))
 
 )
