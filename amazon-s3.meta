@@ -5,7 +5,7 @@
 (
 (license "BSD")
 
-(category cryptography)
+(category web)
 
 (needs base64 sha1 http-client uri-common intarweb srfi-19 hmac ssax sxpath)
 
