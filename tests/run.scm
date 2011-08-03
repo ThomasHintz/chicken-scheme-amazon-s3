@@ -2,10 +2,7 @@
 ; email: t@thintz.com
 ; license: bsd
 
-(load "amazon-s3.scm")
-
-(use test srfi-1)
-(use amazon-s3)
+(use test srfi-1 amazon-s3)
 
 (define *b* "chicken-scheme-test-bucket")
 

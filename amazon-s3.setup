@@ -1,0 +1,15 @@
+; author: Thomas Hintz
+; email: t@thintz.com
+; license: bsd
+
+(compile -s -O2 -d1 amazon-s3.scm -j amazon-s3)
+(compile -s amazon-s3.import.scm -O2 -d0)
+(compile -c -O2 -d1 amazon-s3.scm -unit amazon-s3 -j amazon-s3)
+
+(install-extension
+  'amazon-s3
+  ; Files to install for your extension:
+  '("amazon-s3.o" "amazon-s3.so" "amazon-s3.import.so")
+  ; Assoc list with properties for your extension:
+  '((version 2)
+    (static "amazon-s3.o"))) ;; for static linking

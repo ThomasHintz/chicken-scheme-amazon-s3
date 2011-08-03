@@ -1,0 +1,15 @@
+; author: Thomas Hintz
+; email: t@thintz.com
+; license: bsd
+
+(
+(license "BSD")
+
+(category cryptography)
+
+(needs base64 sha1 http-client uri-common intarweb srfi-19 hmac ssax sxpath)
+
+(test-depends test srfi-1)
+
+(author "Thomas Hintz")
+(synopsis "Provides an interface to the Amazon S3 service."))
