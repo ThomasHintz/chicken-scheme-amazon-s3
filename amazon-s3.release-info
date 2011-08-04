@@ -1,0 +1,7 @@
+(repo git "git://github.com/ThomasHintz/chicken-scheme-{egg-name}.git")   ; optional
+
+(uri targz "https://github.com/ThomasHintz/chicken-scheme-{egg-name}/tarball/{egg-release}")
+(release "1")
+(release "2")
+(release "3")
+(release "4")
