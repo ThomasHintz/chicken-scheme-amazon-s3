@@ -20,6 +20,10 @@
             (test-assert "Delete Object 2" (delete-object! *b* "string"))
             (test-assert "Put Sexp" (put-sexp! *b* "sexp" '(+ 1 2 3)))
             (test "Get Sexp" 6 (eval (get-sexp *b* "sexp")))
+	    (test-assert "Put File" (put-file! *b* "file" "test-in-file"))
+	    (test-assert "Get File" (get-file *b* "file" "test-out-file"))
+	    (test "Get/Put File 1" #t (string=? (with-input-from-file "test-in-file" (lambda () (read-string)))
+						(with-input-from-file "test-out-file" (lambda () (read-string)))))
             (test-assert "Delete Object 3" (delete-object! *b* "sexp"))
             (test-assert "Delete Bucket" (delete-bucket! *b*)))
 

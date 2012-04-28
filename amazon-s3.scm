@@ -11,7 +11,7 @@
 
    ;; procs
    list-objects list-buckets bucket-exists? create-bucket! delete-bucket! get-object put-object! delete-object!
-   put-string! put-sexp! get-string get-sexp
+   put-string! put-sexp! put-file! get-string get-sexp get-file
 
    ;; macros
    with-bucket)
@@ -32,8 +32,8 @@
 (define (intarweb-date date) (string->time (date->string date "~a ~b ~d ~T ~Y GMT")))
 (define (sig-date date) (date->string date "~a, ~d ~b ~Y ~T GMT"))
 
-(define access-key (make-parameter ""))
-(define secret-key (make-parameter ""))
+(define access-key (make-parameter "AKIAJ4BAYHGF254QF7DQ"))
+(define secret-key (make-parameter "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"))
 (define https (make-parameter #f))
 
 ;;; helper methods
@@ -61,11 +61,11 @@
                          (if date (display date) (display ""))
                          (newline)
                          (display (fold (lambda (e o)
-                                        (string-append o (sprintf "~a:~a~%" (car e) (cdr e))))
-                                      ""
-                                      can-amz-headers))
+					  (string-append o (sprintf "~a:~a~%" (car e) (cdr e))))
+					""
+					can-amz-headers))
                          (display resource))))
-         (hmac-sha1 (base64-encode ((hmac (secret-key) (sha1-primitive)) can-string))))
+	 (hmac-sha1 (base64-encode ((hmac (secret-key) (sha1-primitive)) can-string))))
     (set! *last-sig* can-string)
     (values hmac-sha1 can-string)))
 
@@ -103,11 +103,12 @@
                              (bucket #f)
                              (path #f)
                              (sxpath '())
-                             (body '())
+                             (body "")
                              (verb "GET")
                              (ns '((x . "http://s3.amazonaws.com/doc/2006-03-01/")))
                              (no-xml #f)
                              (no-auth #f)
+			     (reader-thunk read-string)
                              (content-type "application/x-www-form-urlencoded")
                              (content-length 0))
   ;(handle-exceptions
@@ -117,8 +118,40 @@
    (aws-request bucket path verb no-auth: no-auth content-type: content-type content-length: content-length)
    body
    (if no-xml
-       read-string
+       reader-thunk
        (aws-xml-parser sxpath ns))))
+
+(define (read-byte-file path . port)
+  (lambda ()
+    (let ((file (open-input-file path)))
+      (letrec ((read-next
+		(lambda ()
+		  (let ((b (read-byte file)))
+		    (if (eof-object? b)
+			#t
+			(begin 
+			  (if (> (length port) 0)
+			      (write-byte b (car port))
+			      (write-byte b))
+			  (read-next)))))))
+	(read-next))
+      (close-input-port file))))
+
+(define (write-byte-file path . port)
+  (lambda ()
+    (let ((file (open-output-file path)))
+      (letrec ((read-next
+		(lambda ()
+		  (let ((b (if (> (length port) 0)
+			       (read-byte (car port))
+			       (read-byte))))
+		    (if (eof-object? b)
+			#t
+			(begin 
+			  (write-byte b file)
+			  (read-next)))))))
+	(read-next))
+      (close-output-port file))))
 
 ;;; api
 
@@ -150,7 +183,7 @@
   (perform-aws-request bucket: bucket sxpath: '(x:ListBucketResult x:Contents x:Key *text*)))
 
 (define (put-object! bucket key object-thunk object-length object-type)
-  (perform-aws-request bucket: bucket path: key verb: "PUT" content-type: object-type body: (object-thunk)
+  (perform-aws-request bucket: bucket path: key verb: "PUT" content-type: object-type body: object-thunk
                        content-length: object-length no-xml: #t))
 
 (define (put-string! bucket key string)
@@ -159,6 +192,9 @@
 (define (put-sexp! bucket key sexp)
   (let-values (((res request-uri response) (put-string! bucket key (->string sexp))))
     (values res request-uri response)))
+
+(define (put-file! bucket key file-path)
+  (put-object! bucket key (read-byte-file file-path) (file-size file-path) "binary/octet-stream"))
 
 (define (get-object bucket key)
   (perform-aws-request bucket: bucket path: key no-xml: #t))
@@ -169,6 +205,9 @@
 (define (get-sexp bucket key)
   (let-values (((string request-uri response) (get-string bucket key)))
                (values (call-with-input-string string read) request-uri response)))
+
+(define (get-file bucket key file-path)
+  (perform-aws-request bucket: bucket path: key no-xml: #t reader-thunk: (write-byte-file file-path)))
 
 (define (delete-object! bucket key)
   (perform-aws-request bucket: bucket path: key no-xml: #t verb: "DELETE"))
