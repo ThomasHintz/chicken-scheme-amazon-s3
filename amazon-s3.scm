@@ -32,8 +32,8 @@
 (define (intarweb-date date) (string->time (date->string date "~a ~b ~d ~T ~Y GMT")))
 (define (sig-date date) (date->string date "~a, ~d ~b ~Y ~T GMT"))
 
-(define access-key (make-parameter "AKIAJ4BAYHGF254QF7DQ"))
-(define secret-key (make-parameter "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"))
+(define access-key (make-parameter ""))
+(define secret-key (make-parameter ""))
 (define https (make-parameter #f))
 
 ;;; helper methods
