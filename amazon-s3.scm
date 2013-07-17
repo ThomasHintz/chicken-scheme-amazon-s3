@@ -187,7 +187,7 @@
                        content-length: object-length no-xml: #t))
 
 (define (put-string! bucket key string)
-  (put-object! bucket key (lambda () string) (string-length string) "text/plain"))
+  (put-object! bucket key (lambda () (display string)) (string-length string) "text/plain"))
 
 (define (put-sexp! bucket key sexp)
   (let-values (((res request-uri response) (put-string! bucket key (->string sexp))))
