@@ -11,5 +11,5 @@
   ; Files to install for your extension:
   '("amazon-s3.o" "amazon-s3.so" "amazon-s3.import.so")
   ; Assoc list with properties for your extension:
-  '((version 0.8)
+  '((version 7)
     (static "amazon-s3.o"))) ;; for static linking
