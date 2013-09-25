@@ -111,9 +111,6 @@
 			     (reader-thunk read-string)
                              (content-type "application/x-www-form-urlencoded")
                              (content-length 0))
-  ;(handle-exceptions
-  ; exn
-  ; ((condition-property-accessor 'client-error 'body) exn)
   (with-input-from-request
    (aws-request bucket path verb no-auth: no-auth content-type: content-type content-length: content-length)
    body
@@ -155,6 +152,9 @@
 
 ;;; api
 
+; broken and deprecated
+; next version will have parameterized keywords so this
+; won't be necessary
 (define-syntax with-bucket
   (syntax-rules ()
     ((with-bucket bucket (func p1 ...))
