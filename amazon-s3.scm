@@ -152,17 +152,6 @@
 
 ;;; api
 
-; broken and deprecated
-; next version will have parameterized keywords so this
-; won't be necessary
-(define-syntax with-bucket
-  (syntax-rules ()
-    ((with-bucket bucket (func p1 ...))
-     (func bucket p1 ...))
-    ((with-bucket bucket exp body ...)
-     (begin (with-bucket bucket exp)
-            (with-bucket bucket body ...)))))
-
 (define (list-buckets)
   (perform-aws-request sxpath: '(x:ListAllMyBucketsResult x:Buckets x:Bucket x:Name *text*)))
 
