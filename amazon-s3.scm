@@ -160,7 +160,8 @@
     ((with-bucket bucket (func p1 ...))
      (func bucket p1 ...))
     ((with-bucket bucket exp body ...)
-     (begin (with-bucket bucket exp)
+     (begin (print "I am deprecated.")
+            (with-bucket bucket exp)
             (with-bucket bucket body ...)))))
 
 (define (list-buckets)
