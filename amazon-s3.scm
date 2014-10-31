@@ -7,7 +7,7 @@
    *last-sig*
 
    ;; params
-   access-key secret-key https
+   access-key secret-key https url
 
    ;; procs
    list-objects list-buckets bucket-exists? create-bucket! delete-bucket! get-object put-object! delete-object!
@@ -27,14 +27,14 @@
 (authorization-param-subunparsers
  `((aws . ,aws-param-subunparser) . ,(authorization-param-subunparsers)))
 
-;;; params
 
-(define (intarweb-date date) (string->time (date->string date "~a ~b ~d ~T ~Y GMT")))
-(define (sig-date date) (date->string date "~a, ~d ~b ~Y ~T GMT"))
+;;; params
+(define (sig-date date) (date->string date))
 
 (define access-key (make-parameter ""))
 (define secret-key (make-parameter ""))
 (define https (make-parameter #f))
+(define url (make-parameter "s3.amazonaws.com"))
 
 ;;; helper methods
 
@@ -44,7 +44,7 @@
        #f
        (abort exn)))
 
-(define (make-aws-authorization verb resource #!key (date #f) (amz-headers '()) (content-md5 #f) (content-type #f))
+(define (make-aws-authorization verb resource #!key (amz-headers '()) (content-md5 #f) (content-type #f))
   (let* ((can-amz-headers (sort (map (lambda (header)
                                        `(,(string-downcase (car header)) . ,(cdr header)))
                                      amz-headers)
@@ -58,14 +58,16 @@
                          (newline)
                          (if content-type (display content-type) (display ""))
                          (newline)
-                         (if date (display date) (display ""))
+                         (newline) ;;; Always rely on x-amz-date
                          (newline)
                          (display (fold (lambda (e o)
-					  (string-append o (sprintf "~a:~a~%" (car e) (cdr e))))
-					""
-					can-amz-headers))
+                                          (string-append o (sprintf "~a:~a~%" (car e) (car (cdr e)))))
+                                        ""
+                                        can-amz-headers))
                          (display resource))))
-	 (hmac-sha1 (base64-encode ((hmac (secret-key) (sha1-primitive)) can-string))))
+
+         (hmac-sha1 (base64-encode ((hmac (secret-key) (sha1-primitive)) can-string))))
+
     (set! *last-sig* can-string)
     (values hmac-sha1 can-string)))
 
@@ -73,8 +75,8 @@
 (define amazon-ns (make-parameter '(x . "http://s3.amazonaws.com/doc/2006-03-01/")))
 
 (define (aws-headers bucket path verb content-type content-length)
-  (let ((n (current-date 0)))
-    (headers `((date #(,(intarweb-date n) ()))
+  (let ((display-date (sig-date (current-date 0))))
+    (headers `((x-amz-date ,display-date)
                (authorization #(aws ((access-key . ,(access-key))
                                      (signed-secret .
                                                     ,(make-aws-authorization
@@ -82,16 +84,21 @@
                                                       (string-append "/"
                                                                      (if bucket (string-append bucket "/") "")
                                                                      (if path path ""))
-                                                      date: (sig-date n)
-                                                      content-type: content-type)))))
+                                                      content-type: content-type
+                                                      amz-headers: `(("x-amz-date" ,(string-append "\"" display-date "\""))))
+                                                    ))))
                (content-type ,(string->symbol content-type))
                (content-length ,content-length)))))
 
 (define (aws-request bucket path verb #!key no-auth (content-type "") (content-length 0))
   (make-request
    method: (string->symbol verb)
-   uri: (uri-reference (string-append "http" (if (https) "s" "") "://" (if bucket (string-append bucket ".") "")
-                                      "s3.amazonaws.com" (if path (string-append "/" path) "")))
+   uri: (uri-reference (string-append "http"
+                                      (if (https) "s" "")
+                                      "://"
+                                      (if bucket (string-append bucket ".") "")
+                                      (url)
+                                      (if path (string-append "/" path) "")))
    headers: (if no-auth (headers '()) (aws-headers bucket path verb content-type content-length))))
 
 (define (aws-xml-parser path ns)
